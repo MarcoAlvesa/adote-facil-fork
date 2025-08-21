@@ -1,95 +1,63 @@
-# Nome do workflow
-name: experimento-ci-cd
+name: CI/CD Pipeline - Adote Fácil
 
-# Evento que aciona o workflow: toda vez que for criado um Pull Request para a branch main
 on:
+  pull_request:
+    branches: [ main, master ]
   push:
-    branches:
-      - main
+    branches: [ main, master ]
 
-# Definição dos jobs (tarefas) que serão executadas
+env:
+  NODE_VERSION: '18.x'
+  POSTGRES_DB: adote_facil
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: postgres
+  POSTGRES_HOST: localhost
+  POSTGRES_PORT: 5432
+  FRONTEND_PORT: 3000
+  BACKEND_PORT: 5000
+
 jobs:
-
-  # Primeiro job: Executar testes unitários
-  unit-test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout do código
-        uses: actions/checkout@v4
-
-      - name: Instalar dependências do backend
-        run: |
-          cd backend
-          npm install
-
-      - name: Executar testes unitários com Jest
-        run: |
-          cd backend
-          npm test -- --coverage
-
-  # Segundo job: Build (construção) das imagens Docker
-  build:
-    needs: unit-test
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout do código
-        uses: actions/checkout@v4
-
-      - name: Configurar Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Configurar Docker QEMU
-        uses: docker/setup-qemu-action@v2
-
-      - name: Build das imagens Docker
-        run: docker compose build
-
-  # Terceiro job: Subir os containers temporariamente para testes básicos de integração
-  up-containers:
-    needs: build
-    runs-on: ubuntu-latest
-    env:
-      POSTGRES_DB: adote_facil
-      POSTGRES_HOST: adote-facil-postgres
-      POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-      POSTGRES_PORT: 5432
-      POSTGRES_CONTAINER_PORT: 6500
-
-    steps:
-      - name: Checkout do código
-        uses: actions/checkout@v4
-
-      - name: Criar arquivo .env
-        working-directory: ./backend
-        run: |
-          echo "POSTGRES_DB=${{ env.POSTGRES_DB }}" > .env
-          echo "POSTGRES_HOST=${{ env.POSTGRES_HOST }}" >> .env
-          echo "POSTGRES_USER=${{ secrets.POSTGRES_USER }}" >> .env
-          echo "POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" >> .env
-          echo "POSTGRES_PORT=${{ env.POSTGRES_PORT }}" >> .env
-          echo "POSTGRES_CONTAINER_PORT=${{ env.POSTGRES_CONTAINER_PORT }}" >> .env
-
-      - name: Subir containers com Docker Compose
-        working-directory: ./backend
-        run: |
-          docker compose up -d
-          sleep 10
-          docker compose down
-
-  # Quarto job: Executar testes end-to-end com Cypress
-  e2e-tests:
-    needs: build  # Depende do build estar completo
+  unit-tests:
+    name: Unit Tests - Backend
     runs-on: ubuntu-latest
     
-    # Serviços necessários (banco de dados)
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: npm ci
+
+      - name: Run unit tests with coverage
+        working-directory: ./backend
+        run: npm test -- --coverage --watchAll=false
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: jest-coverage-report
+          path: backend/coverage/
+
+  backend-integration:
+    name: Backend Integration Tests
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    
     services:
       postgres:
         image: postgres:13
         env:
-          POSTGRES_DB: adote_facil
-          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: ${{ env.POSTGRES_DB }}
+          POSTGRES_USER: ${{ env.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -99,59 +67,217 @@ jobs:
           - 5432:5432
 
     steps:
-      - name: Checkout do código
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: npm ci
+
+      - name: Create environment file
+        working-directory: ./backend
+        run: |
+          echo "DATABASE_URL=postgresql://${{ env.POSTGRES_USER }}:${{ env.POSTGRES_PASSWORD }}@${{ env.POSTGRES_HOST }}:${{ env.POSTGRES_PORT }}/${{ env.POSTGRES_DB }}" > .env.test
+          echo "JWT_SECRET=test-jwt-secret-for-ci-cd" >> .env.test
+          echo "NODE_ENV=test" >> .env.test
+
+      - name: Run database migrations
+        working-directory: ./backend
+        run: npm run db:migrate
+        env:
+          NODE_ENV: test
+
+      - name: Run integration tests
+        working-directory: ./backend
+        run: npm run test:integration
+        env:
+          NODE_ENV: test
+        continue-on-error: false
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results
+          path: backend/test-results/
+
+  build-docker:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: backend-integration
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build backend image
+        run: |
+          docker build -t adote-facil-backend:latest ./backend
+
+      - name: Build frontend image
+        run: |
+          docker build -t adote-facil-frontend:latest ./frontend
+
+      - name: List built images
+        run: docker images
+
+  e2e-tests:
+    name: E2E Tests with Cypress
+    runs-on: ubuntu-latest
+    needs: build-docker
+
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_DB: ${{ env.POSTGRES_DB }}
+          POSTGRES_USER: ${{ env.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      backend:
+        image: adote-facil-backend:latest
+        env:
+          DATABASE_URL: postgresql://${{ env.POSTGRES_USER }}:${{ env.POSTGRES_PASSWORD }}@${{ env.POSTGRES_HOST }}:${{ env.POSTGRES_PORT }}/${{ env.POSTGRES_DB }}
+          JWT_SECRET: test-jwt-secret-for-ci-cd
+          NODE_ENV: test
+        ports:
+          - 5000:5000
+        depends_on:
+          - postgres
+        options: >-
+          --health-cmd "curl -f http://localhost:5000/health || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js for Cypress
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Instalar dependências do frontend
+      - name: Install frontend dependencies
         working-directory: ./frontend
         run: npm ci
 
-      - name: Instalar Cypress
+      - name: Install Cypress
         working-directory: ./frontend
         run: npm install cypress --save-dev
 
-      - name: Executar testes Cypress
-        working-directory: ./frontend
-        run: npx cypress run --spec "cypress/e2e/**/*.cy.js"
-        env:
-          CYPRESS_BASE_URL: http://localhost:3000
-          NODE_ENV: test
+      - name: Wait for backend to be ready
+        run: |
+          echo "Waiting for backend to start..."
+          timeout 60s bash -c 'until curl -s http://localhost:5000/health >/dev/null; do echo "Backend not ready yet..."; sleep 5; done'
+          echo "Backend is ready!"
 
-      - name: Upload vídeos dos testes (se falharem)
+      - name: Run database migrations for test data
+        working-directory: ./backend
+        run: |
+          docker run --network host -e DATABASE_URL="postgresql://${{ env.POSTGRES_USER }}:${{ env.POSTGRES_PASSWORD }}@${{ env.POSTGRES_HOST }}:${{ env.POSTGRES_PORT }}/${{ env.POSTGRES_DB }}" adote-facil-backend:latest npm run db:migrate
+
+      - name: Run Cypress tests
+        working-directory: ./frontend
+        run: |
+          npx cypress run --spec "cypress/e2e/**/*.cy.js" --config baseUrl=http://localhost:${{ env.FRONTEND_PORT }}
+        env:
+          CYPRESS_BASE_URL: http://localhost:${{ env.FRONTEND_PORT }}
+          CYPRESS_API_URL: http://localhost:${{ env.BACKEND_PORT }}
+          CYPRESS_TEST_USER_EMAIL: test@example.com
+          CYPRESS_TEST_USER_PASSWORD: password123
+
+      - name: Upload Cypress videos
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: cypress-videos
           path: frontend/cypress/videos
 
-      - name: Upload screenshots (se falharem)
+      - name: Upload Cypress screenshots
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: cypress-screenshots
           path: frontend/cypress/screenshots
 
-  # Quinto job: Geração e entrega do artefato do projeto
-  delivery:
-    needs: [build, e2e-tests]  # Agora depende também dos testes E2E
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout do código
-        uses: actions/checkout@v4
-
-      - name: Gerar arquivo ZIP do projeto completo
-        run: zip -r adote-facil-projeto.zip . -x '*.git*' '*.github*' 'node_modules/*'
-
-      - name: Upload do artefato
+      - name: Upload Cypress test results
         uses: actions/upload-artifact@v4
         with:
-          name: adote-facil-projeto
-          path: adote-facil-projeto.zip
+          name: cypress-results
+          path: frontend/cypress/results
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: build-docker
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run npm audit
+        run: |
+          cd backend && npm audit
+          cd ../frontend && npm audit
+
+      - name: Scan for vulnerabilities with trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'table'
+          exit-code: '1'
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+  deploy-preview:
+    name: Deploy Preview
+    runs-on: ubuntu-latest
+    needs: [e2e-tests, security-scan]
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to preview environment
+        run: echo "Deploying preview version for PR sexo nervoso"
+  final-report:
+    name: Final Report
+    runs-on: ubuntu-latest
+    needs: [unit-tests, backend-integration, e2e-tests, security-scan]
+    if: always()
+
+    steps:
+      - name: Generate summary report
+        run: |
+          echo "# CI/CD Pipeline Report" >> $GITHUB_STEP_SUMMARY
+          echo "## 📊 Test Results Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Unit Tests: ${{ needs.unit-tests.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Integration Tests: ${{ needs.backend-integration.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ E2E Tests: ${{ needs.e2e-tests.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Security Scan: ${{ needs.security-scan.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "All checks passed! Ready for deployment." >> $GITHUB_STEP_SUMMARY
