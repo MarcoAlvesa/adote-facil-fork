@@ -1,58 +1,30 @@
 # Nome do workflow
 name: experimento-ci-cd
 
-# Evento que aciona o workflow: toda vez que for criado um Pull Request para a branch main
+# Evento que aciona o workflow
 on:
-  push:
-    branches:
-      - ci-cd
   pull_request:
     branches:
       - main
 
-# Definição dos jobs (tarefas) que serão executadas
 jobs:
-
-  # Primeiro job: Executar testes unitários
+  # Job 1: Testes unitários (continua o mesmo)
   unit-test:
-    runs-on: ubuntu-latest  # Define o sistema operacional usado no runner (Ubuntu na versão mais recente)
-    steps:
-      - name: Checkout do código
-        uses: actions/checkout@v4  # Faz o download do repositório no runner
-
-      - name: Instalar dependências do backend
-        run: |
-          cd backend
-          npm install
-
-      - name: Executar testes unitários com Jest
-        run: |
-          cd backend
-          npm test -- --coverage
-
-  # Segundo job: Build (construção) das imagens Docker
-  build:
-    needs: unit-test  # Esse job só será executado após o job 'unit-test' ser concluído com sucesso
     runs-on: ubuntu-latest
     steps:
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      - name: Configurar Docker Buildx
-        uses: docker/setup-buildx-action@v2  # Habilita a ferramenta Buildx do Docker para builds mais avançados
+      - name: Instalar dependências e rodar testes unitários do backend
+        run: |
+          cd backend
+          npm install
+          npm test -- --coverage
 
-      - name: Configurar Docker QEMU
-        uses: docker/setup-qemu-action@v2  # Permite builds multiplataforma usando emulação (útil em CI)
-
-      - name: Build das imagens Docker
-        run: docker compose build  # Executa o build das imagens definidas no docker-compose.yml
-
-  # Terceiro job: Execução dos testes End-to-End com Cypress
-  e2e-test:
-    needs: build # Depende que as imagens Docker tenham sido construídas
+  # Job 2: Construir as imagens e rodar os testes E2E
+  build-and-test:
+    needs: unit-test # Depende apenas dos testes unitários
     runs-on: ubuntu-latest
-
-    # Definição de variáveis de ambiente necessárias para o backend e banco
     env:
       POSTGRES_DB: adote_facil
       POSTGRES_HOST: adote-facil-postgres
@@ -60,11 +32,19 @@ jobs:
       POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
       POSTGRES_PORT: 5432
       POSTGRES_CONTAINER_PORT: 6500
-
     steps:
       - name: Checkout do código
         uses: actions/checkout@v4
 
+      - name: Configurar Docker Buildx e QEMU
+        uses: docker/setup-buildx-action@v2
+      - uses: docker/setup-qemu-action@v2
+
+      # --- PASSO DO ANTIGO JOB 'BUILD' AGORA ESTÁ AQUI ---
+      - name: Build das imagens Docker
+        run: docker compose build
+
+      # --- PASSOS DO ANTIGO JOB 'E2E-TEST' VÊM A SEGUIR ---
       - name: Criar arquivo .env para o backend
         working-directory: ./backend
         run: |
@@ -78,25 +58,21 @@ jobs:
       - name: Subir containers com Docker Compose
         run: docker compose build
 
-      # Utiliza a action oficial do Cypress para executar os testes
-      # Ela automaticamente instala o Cypress, as dependências do frontend e espera a aplicação iniciar
       - name: Executar testes E2E com Cypress
         uses: cypress-io/github-action@v6
         with:
-          # Espera a URL do frontend estar respondendo antes de iniciar os testes
-          # Isso é muito mais confiável do que usar um 'sleep' fixo
           wait-on: 'http://localhost:3000'
-          wait-on-timeout: 120 # Tempo máximo de espera (em segundos)
-          browser: chrome # Define o navegador para a execução dos testes
-          
-      # Este passo é crucial para garantir que os containers sejam derrubados mesmo se os testes falharem
+          wait-on-timeout: 120
+          browser: chrome
+
       - name: Derrubar containers após os testes
-        if: always() # A condição 'always()' garante que este passo sempre será executado
+        if: always()
         run: docker compose down
 
-  # Quarto job: Geração e entrega do artefato do projeto
+  # Job 3: Geração do artefato (agora depende do 'build-and-test')
   delivery:
-    needs: build  # Esse job também depende do job 'build' e pode rodar em paralelo com o 'e2e-test'
+    # Ajustamos a dependência aqui. Queremos o artefato apenas se os testes E2E passarem.
+    needs: build-and-test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout do código
