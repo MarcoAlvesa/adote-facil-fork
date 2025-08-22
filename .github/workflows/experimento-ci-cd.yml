@@ -76,7 +76,7 @@ jobs:
           echo "POSTGRES_CONTAINER_PORT=${{ env.POSTGRES_CONTAINER_PORT }}" >> .env
 
       - name: Subir containers com Docker Compose
-        run: docker compose up -d
+        run: docker compose build
 
       # Utiliza a action oficial do Cypress para executar os testes
       # Ela automaticamente instala o Cypress, as dependências do frontend e espera a aplicação iniciar
