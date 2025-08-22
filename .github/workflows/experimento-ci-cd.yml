@@ -3,6 +3,9 @@ name: experimento-ci-cd
 
 # Evento que aciona o workflow: toda vez que for criado um Pull Request para a branch main
 on:
+  push:
+    branches:
+      - ci-cd
   pull_request:
     branches:
       - main
@@ -19,13 +22,13 @@ jobs:
 
       - name: Instalar dependências do backend
         run: |
-          cd backend              # Acessa a pasta do backend
-          npm install             # Instala as dependências do Node.js
+          cd backend
+          npm install
 
       - name: Executar testes unitários com Jest
         run: |
-          cd backend              # Acessa novamente a pasta do backend
-          npm test -- --coverage  # Executa os testes e gera relatório de cobertura
+          cd backend
+          npm test -- --coverage
 
   # Segundo job: Build (construção) das imagens Docker
   build:
@@ -44,17 +47,17 @@ jobs:
       - name: Build das imagens Docker
         run: docker compose build  # Executa o build das imagens definidas no docker-compose.yml
 
-  # Terceiro job: Subir os containers temporariamente para testes básicos de integração
-  up-containers:
-    needs: build  # Esse job depende do job 'build'
+  # Terceiro job: Execução dos testes End-to-End com Cypress
+  e2e-test:
+    needs: build # Depende que as imagens Docker tenham sido construídas
     runs-on: ubuntu-latest
 
     # Definição de variáveis de ambiente necessárias para o backend e banco
     env:
       POSTGRES_DB: adote_facil
       POSTGRES_HOST: adote-facil-postgres
-      POSTGRES_USER: ${{ secrets.POSTGRES_USER }}  # Usuário do banco, vindo dos segredos do repositório
-      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}  # Senha do banco
+      POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
       POSTGRES_PORT: 5432
       POSTGRES_CONTAINER_PORT: 6500
 
@@ -62,10 +65,9 @@ jobs:
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      - name: Criar arquivo .env
-        working-directory: ./backend  # Define o diretório de trabalho para esse passo
+      - name: Criar arquivo .env para o backend
+        working-directory: ./backend
         run: |
-          # Gera o arquivo .env com as variáveis definidas acima
           echo "POSTGRES_DB=${{ env.POSTGRES_DB }}" > .env
           echo "POSTGRES_HOST=${{ env.POSTGRES_HOST }}" >> .env
           echo "POSTGRES_USER=${{ env.POSTGRES_USER }}" >> .env
@@ -74,27 +76,37 @@ jobs:
           echo "POSTGRES_CONTAINER_PORT=${{ env.POSTGRES_CONTAINER_PORT }}" >> .env
 
       - name: Subir containers com Docker Compose
-        working-directory: ./backend
-        run: |
-          docker compose up -d     # Sobe os containers em segundo plano
-          sleep 10                 # Aguarda alguns segundos para garantir que os serviços subam
-          docker compose down      # Encerra os containers após o teste
+        run: docker compose up -d
+
+      # Utiliza a action oficial do Cypress para executar os testes
+      # Ela automaticamente instala o Cypress, as dependências do frontend e espera a aplicação iniciar
+      - name: Executar testes E2E com Cypress
+        uses: cypress-io/github-action@v6
+        with:
+          # Espera a URL do frontend estar respondendo antes de iniciar os testes
+          # Isso é muito mais confiável do que usar um 'sleep' fixo
+          wait-on: 'http://localhost:3000'
+          wait-on-timeout: 120 # Tempo máximo de espera (em segundos)
+          browser: chrome # Define o navegador para a execução dos testes
+          
+      # Este passo é crucial para garantir que os containers sejam derrubados mesmo se os testes falharem
+      - name: Derrubar containers após os testes
+        if: always() # A condição 'always()' garante que este passo sempre será executado
+        run: docker compose down
 
   # Quarto job: Geração e entrega do artefato do projeto
   delivery:
-    needs: build  # Esse job também depende do job 'build'
+    needs: build  # Esse job também depende do job 'build' e pode rodar em paralelo com o 'e2e-test'
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout do código
         uses: actions/checkout@v4
 
       - name: Gerar arquivo ZIP do projeto completo
         run: zip -r adote-facil-projeto.zip . -x '*.git*' '*.github*' 'node_modules/*'
-        # Compacta todos os arquivos do repositório, exceto pastas desnecessárias como .git, .github e node_modules
 
       - name: Upload do artefato
         uses: actions/upload-artifact@v4
         with:
-          name: adote-facil-projeto  # Nome do artefato que aparecerá na aba de artefatos da execução
-          path: adote-facil-projeto.zip  # Caminho do arquivo que será enviado
+          name: adote-facil-projeto
+          path: adote-facil-projeto.zip
