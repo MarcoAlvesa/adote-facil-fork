@@ -43,11 +43,9 @@ jobs:
         uses: docker/setup-buildx-action@v2
       - uses: docker/setup-qemu-action@v2
 
-      # --- PASSO DO ANTIGO JOB 'BUILD' AGORA ESTÁ AQUI ---
       - name: Build das imagens Docker
         run: docker compose build
 
-      # --- PASSOS DO ANTIGO JOB 'E2E-TEST' VÊM A SEGUIR ---
       - name: Criar arquivo .env para o backend
         working-directory: ./backend
         run: |
@@ -64,6 +62,7 @@ jobs:
       - name: Executar testes E2E com Cypress
         uses: cypress-io/github-action@v6
         with:
+          working-directory: ./frontend 
           wait-on: 'http://localhost:3000'
           wait-on-timeout: 120
           browser: chrome
