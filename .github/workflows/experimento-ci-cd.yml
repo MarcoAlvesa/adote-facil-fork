@@ -64,7 +64,7 @@ jobs:
         with:
           working-directory: ./frontend 
           wait-on: 'http://localhost:3000'
-          wait-on-timeout: 120
+          wait-on-timeout: 60
           browser: chrome
 
       - name: Derrubar containers após os testes
