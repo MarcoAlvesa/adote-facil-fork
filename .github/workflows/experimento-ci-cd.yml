@@ -58,7 +58,7 @@ jobs:
           echo "POSTGRES_CONTAINER_PORT=${{ env.POSTGRES_CONTAINER_PORT }}" >> .env
 
       - name: Subir containers com Docker Compose
-        run: docker compose up -d
+        run: docker compose build
 
       - name: Exibir logs dos containers
         run: docker compose logs
