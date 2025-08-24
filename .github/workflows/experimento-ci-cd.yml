@@ -59,7 +59,7 @@ jobs:
       - name: Subir containers com Docker Compose
         working-directory: ./backend
         run: |
-          docker compose up & echo "--- Aguardando 30 segundos para os containers estabilizarem... ---" 
+          docker compose up -d & echo "--- Aguardando 30 segundos para os containers estabilizarem... ---" 
           sleep 30 
           echo "--- Status dos containers Docker ---"
           docker ps -a
