@@ -88,7 +88,10 @@ jobs:
           wait-on: 'http://localhost:3000'
           wait-on-timeout: 180
           browser: chrome
-          run: docker compose down
+
+      - name: Derrubar contêineres após os testes
+        if: always()
+        run: docker compose down
 
   # Quarto job: Geração e entrega do artefato do projeto
   delivery:
