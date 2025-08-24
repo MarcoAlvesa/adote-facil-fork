@@ -22,13 +22,13 @@ jobs:
 
       - name: Instalar dependências do backend
         run: |
-          cd backend              # Acessa a pasta do backend
-          npm install             # Instala as dependências do Node.js
+          cd backend
+          npm install
 
       - name: Executar testes unitários com Jest
         run: |
-          cd backend              # Acessa novamente a pasta do backend
-          npm test -- --coverage  # Executa os testes e gera relatório de cobertura
+          cd backend
+          npm test -- --coverage
 
   # Segundo job: Build (construção) das imagens Docker
   build:
