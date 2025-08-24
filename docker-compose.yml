@@ -1,16 +1,19 @@
+# Adiciona a versão para garantir compatibilidade e clareza
+version: '3.8'
+
 services:
   adote-facil-postgres:
     image: postgres:14-alpine
     container_name: 'adote-facil-postgres'
+    restart: unless-stopped
     env_file:
-      - ./backend/.env
+      - .env # Usando o .env centralizado na raiz
     environment:
+      # As variáveis são lidas do .env e passadas para o contêiner
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_CONTAINER_PORT: ${POSTGRES_CONTAINER_PORT}
-    ports:
-      - ${POSTGRES_CONTAINER_PORT}:5432
+    # A seção 'ports' foi removida por segurança
     volumes:
       - db_data:/var/lib/postgresql/data
     networks:
@@ -26,14 +29,17 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: 'adote-facil-backend'
+    restart: unless-stopped
     ports:
       - "8080:8080"
+    env_file:
+      - .env # O backend também usa o .env central
     environment:
       - NODE_ENV=production
     depends_on:
       adote-facil-postgres:
-        condition: service_healthy
-    command: sh -c "until nc -z adote-facil-postgres 5432; do echo 'Waiting for postgres...'; sleep 1; done; npm start"
+        condition: service_healthy # Esta é a única condição necessária
+    # O 'command' foi removido. Coloque `CMD ["npm", "start"]` no seu Dockerfile.
     networks:
       - adote-facil-network
 
@@ -42,6 +48,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: 'adote-facil-frontend'
+    restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
