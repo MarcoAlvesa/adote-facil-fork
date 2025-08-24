@@ -57,6 +57,7 @@ jobs:
           echo "POSTGRES_CONTAINER_PORT=${{ env.POSTGRES_CONTAINER_PORT }}" >> .env
 
       - name: Subir containers com Docker Compose
+        working-directory: ./backend
         run: |
           docker compose up & echo "--- Aguardando 30 segundos para os containers estabilizarem... ---" 
           sleep 30 
