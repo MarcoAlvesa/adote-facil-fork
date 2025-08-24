@@ -23,3 +23,5 @@ Após a implementação dos testes em cypress, agora é possível que o pipeline
 ```
 
 E agora, o job delivery depende de up containers.
+
+O Dockerfile e docker-compose.yml não foram alterados.
