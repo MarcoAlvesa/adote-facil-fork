@@ -69,7 +69,7 @@ jobs:
       - name: Executar testes E2E com Cypress
         uses: cypress-io/github-action@v6
         with:
-          working-directory: ./frontend
+          working-directory: ./testes
           wait-on: 'http://localhost:3000'
           wait-on-timeout: 180
           browser: chrome
