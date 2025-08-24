@@ -101,7 +101,7 @@ jobs:
   # Job 3: Geração do artefato
   delivery:
     # Ajustamos a dependência aqui. Queremos o artefato apenas se os testes E2E passarem.
-    needs: build-and-test
+    needs: install-and-test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout do código
