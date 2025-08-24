@@ -68,7 +68,6 @@ jobs:
       - name: Criar arquivo .env
         working-directory: ./backend  # Define o diretório de trabalho para esse passo
         run: |
-          # Gera o arquivo .env com as variáveis definidas acima
           echo "POSTGRES_DB=${{ env.POSTGRES_DB }}" > .env
           echo "POSTGRES_HOST=${{ env.POSTGRES_HOST }}" >> .env
           echo "POSTGRES_USER=${{ env.POSTGRES_USER }}" >> .env
