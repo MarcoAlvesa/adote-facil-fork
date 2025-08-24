@@ -3,6 +3,9 @@ name: experimento-ci-cd
 
 # Evento que aciona o workflow: toda vez que for criado um Pull Request para a branch main
 on:
+  push:
+    branches:
+      - ci-cd
   pull_request:
     branches:
       - main
