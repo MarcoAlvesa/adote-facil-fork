@@ -88,13 +88,13 @@ jobs:
           wait-on-timeout: 180
           browser: chrome
 
-      - name: Derrubar contêineres após os testes
+      - name: Encerrar containers ap  ós os testes
         if: always()
         run: docker compose down
 
   # Quarto job: Geração e entrega do artefato do projeto
   delivery:
-    needs: build  # Esse job também depende do job 'build'
+    needs: up-containers  # Esse job também depende do job 'build'
     runs-on: ubuntu-latest
 
     steps:
