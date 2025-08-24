@@ -79,7 +79,7 @@ jobs:
       - name: Subir containers com Docker Compose
         working-directory: ./backend
         run: |
-          docker compose up -d     # Sobe os containers em segundo plano
+          docker compose up -d
       
       - name: Executar testes E2E com Cypress
         uses: cypress-io/github-action@v6
